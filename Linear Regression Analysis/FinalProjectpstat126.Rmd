@@ -1,0 +1,239 @@
+---
+title: "PSTAT 126 Final Project"
+author: "Conrad Fritz"
+date: "2026-06-06"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy = TRUE,
+  tidy.opts = list(width.cutoff = 60))
+data <- read.csv("C:/Users/conra/Downloads/archive (4)/Diamonds Prices2022.csv")
+set.seed(50)
+library(dplyr)
+library(ggplot2)
+```
+
+
+# Part 1: Data Description and Descriptive Statistics: 
+1. Select a random sample.
+```{r}
+n <- nrow(data)/2
+data.samp <- slice_sample(data, prop=0.20)
+summary(data.samp)
+```
+
+2. Describe all variables. 
+```{r}
+summary(data)
+# Categorical Data
+par(mfrow = c(1, 3))
+table(data.samp$color) %>% barplot(main = "Color of diamonds in data", ylab="Count",xlab="Color", col= 1:7)
+table(data.samp$cut) %>% barplot(main = "Cut of diamonds in data", ylab="Count",xlab="Cut", col=1:5)
+table(data.samp$clarity) %>% barplot(main = "Clarity of diamonds in data", ylab="Count",xlab="Clarity", col=1:5)
+
+par(mfrow = c(2, 4))
+data.samp$carat %>% hist(main = "Carat of diamonds in data", ylab="Count",xlab="Carat", col=1:5)
+data.samp$depth %>% hist(main = "Depth of diamonds in data", ylab="Count",xlab="Depth", col=1:5)
+data.samp$table %>% hist(main = "Table of diamonds in data", ylab="Count",xlab="Table", col=1:5)
+data.samp$price %>% hist(main = "Price of diamonds in data", ylab="Count",xlab="Price", col=1:5)
+data.samp$x %>% hist(main = "Length (X) of diamonds in data", ylab="Count",xlab="Length in mm", col=1:5)
+data.samp$y %>% hist(main = "Width (Y) of diamonds in data", ylab="Count",xlab="Width in mm", col=1:5)
+data.samp$z %>% hist(main = "Depth (Z) of diamonds in data", ylab="Count",xlab="Depth in mm", col=1:5)
+
+```
+There are 7 colors (D-J), 5 Types of Cuts, 8 Clarity categories, a range from 0 to 4 carats, a range of 45-75 mm (?) depth, Prices ranging from 0 to over 15k, the length of a diamond from 0 to 10 mm, the width of a diamond from 0-30 mm, and the depth of a diamond from 0-6 mm. 
+
+3. For this problem, we're going to pick carat, price and the length (x) in mm of the diamond. 
+```{r}
+vars <- data.samp %>% select(carat, price, x)
+matrix <- cor(vars)
+
+matrix
+
+plot(vars, main = "Scatterplot Matrix of Variables")
+```
+Looking at the variables' correlation matrix, we see that there's a positive correlation between the carat and price of a diamond (more carats, higher the price), and we also see that the greater the length of the diamond, the higher the carat AND price. Overall, there are definitely some correlations between all three variables. 
+
+```{r}
+
+# price and cut
+par(mfrow = c(1, 2))
+boxplot(price ~ cut, data.samp, 
+        main = "Price against Cut", 
+        xlab = "Cut", ylab = "Price", col = "lightblue")
+
+# price and color
+boxplot(price ~ color, data.samp, 
+        main = "Price against Color", 
+        xlab = "Color", ylab = "Price", col = "lightgreen")
+```
+Looking at the price against the cut, we see there's a fair correlation between the two. The premium cuts yield the maximum highest price, and with each tier under premium, the max price lowers. 
+Looking at the price against color, we see that there's a pretty significant correlation between the two as the prices of the diamonds go up with a 'better quality' color (larger letter). 
+
+4.
+```{r}
+multi.model <- lm(price ~., data.samp)
+
+summary(multi.model)
+```
+Looking at the multi linear regression model, we do see that y and z aren't statistically significant. In addition to this, we have a pretty accurate model with an adjusted R-Squared of 0.9206. This makes me believe that we can simply use a backwards step elimination process to achieve a pretty strong and accurate model made up of more statistically significant variables.
+
+
+
+5. The data is pretty much what I expected, and it seems correlated in the way that I'd imagine in real life. I was incredibly surprised to see color playing a larger part in the price though, so that was interesting. 
+
+
+# Part 2: 
+1. 
+```{r}
+model1 <- lm(price ~ carat, data.samp)
+
+ggplot(data.samp, aes(x=carat,y=price)) +
+  geom_smooth(method = "lm", color = "red") + 
+    labs(title = "Simple Linear Regression: Price vs. Carat",
+         x = "Carat", 
+         y = "Price")
+
+```
+
+2. 
+```{r}
+
+summary(model1)
+confint(model1)
+predint <- predict(model1, interval="prediction")
+head(predint)
+
+```
+After printing out the summary statistics for this model, we can tell that from the coefficient's Pr(>|t|), the p-value is less than 0, which is well below the 0.05 significance level, indicating that we reject the null hypothesis. This means this variable is a statistically significant predictor of the diamond's price. 
+
+According to the Residual Standard Error, for every estimate, we'll be an average of $1540 off.
+
+Looking at the F-Statistics, we have an incredibly large number, indicating that we reject the null hypothesis, suggesting at least one of the coefficients is statistically significant. 
+
+According to the adjust R-Squared, this model is already fairly solid. We sit at a value of 0.8477, which is incredibly close to the limit of 1, indicating we have a strong simple linear model that can estimate a diamond's price based on its carat. 
+
+The confidence interval of [7687.348,7811.316] shows that we're 95% confident that for every increase in a diamond's carat, the true average price of the diamond increases by an amount within that interval. The prediction interval indicates that for the first diamond of our set, the real price sits between 3021.4733 and 9059.298 dollars, with an estimated 6040.39 dollars from the model. However, I noticed that for some of the other diamonds, there are negative values, which indicates that some form of transformations are needed. 
+
+3.
+```{r}
+par(mfrow = c(2, 2)) 
+plot(model1)
+par(mfrow = c(1, 1))
+
+```
+We see the violation of equal variance in the residual vs fitted and a lack of normality in the Q-Q Residuals since it has an S shape, so we must log the model to make it not violate our assumptions, like so: 
+
+```{r}
+# attempting just y
+
+y.model <- lm(log(price) ~ carat, data = data.samp)
+par(mfrow = c(2, 2)) 
+plot(y.model)
+par(mfrow = c(1, 1))
+
+# attempting both y and x 
+both.model<- lm(log(price) ~ log(carat), data = data.samp)
+par(mfrow = c(2, 2)) 
+plot(both.model)
+par(mfrow = c(1, 1))
+```
+
+Now that the residuals and the fitted look significantly better (more randomized, thus the variance assumption is good), and the Q-Q Residuals looks less like a snake, meaning our normality assumption isn't violated. 
+
+4. 
+```{r}
+summary(both.model)
+```
+
+5. After going through all almost all of the variables and cutting the ones that don't increase the adjusted R^2...
+```{r, echo=FALSE, eval=FALSE}
+model1 <- lm(log(price) ~ log(carat) + x , data = data.samp)
+summary(model1)
+
+model2 <- lm(log(price) ~ log(carat) + x + color , data = data.samp)
+summary(model2)
+
+model3 <- lm(log(price) ~ log(carat) + x + color + cut, data = data.samp)
+summary(model3)
+
+model4 <- lm(log(price) ~ log(carat) + x + color + cut + clarity , data = data.samp)
+summary(model4)
+
+model5 <- lm(log(price) ~ log(carat) + x + color + cut + clarity +depth , data = data.samp)
+summary(model5)
+
+model6 <- lm(log(price) ~ log(carat) + x + color + cut + clarity + depth + table , data = data.samp)
+summary(model6)
+```
+The final regression model is: 
+```{r}
+model6 <- lm(log(price) ~ log(carat) + x + color + cut + clarity + depth + table , data = data.samp)
+summary(model6)
+```
+However, I would like to check that it doesn't violate any of our assumptions: 
+```{r}
+par(mfrow = c(2, 2)) 
+plot(model6)
+par(mfrow = c(1, 1))
+```
+6.
+Since we're good, we can say this is our final personalized model! We have an adjusted R^2 of 0.9828, which means it's an incredibly strong model. In addition to this, apparently, according to the RSE, on average, for every estimation, we'll only be 0.1328 off. While this model is great, I would like to note that we haven't checked for multicollinearity. Seeing as we'll do it later in the project, we'll leave that section for that part. 
+
+
+# Part 3 
+While I may use the following model from Part 2, curiosity makes me want to try the AIC method:
+
+```{r}
+full.model <- lm(price~., data.samp) 
+
+step(full.model, direction="backward") 
+
+new.model <- lm(formula = price ~ X + carat + cut + color + clarity + depth + 
+    table + x, data = data.samp)
+
+summary(new.model)
+```
+I'm noticing that the model using backward elimination closely resembles my model from before, but with the inclusion of X, and the removal of the log of carat. I'm also noticing that the adjusted R-Squared for this model is lower than the model I created, which is mildly strange. I'm going to remove X because it's simply the index of each diamond value (the rows), which shouldn't have any correlation.
+
+2. 
+```{r}
+library(car)
+vif_values <- vif(new.model)
+vif_values
+```
+We definitely have some multicollinearity with carat and x, meaning we'll probably just have to remove x. 
+
+```{r}
+new.model <- lm(formula = price ~ carat + cut + color + clarity + depth + 
+    table , data = data.samp)
+summary(new.model)
+vif_values <- vif(new.model)
+vif_values
+```
+
+3.
+```{r}
+new_diamond <- data.frame(
+  carat = 1.0,
+  cut = "Ideal",
+  color = "G",
+  clarity = "VS2",
+  depth = 61.5,
+  table = 57.0      
+)
+
+predict(new.model, new_diamond, interval="confidence")
+predict(new.model, new_diamond, interval="prediction")
+```
+We see a prediction of 6193.422, with a Confidence Interval of (6123.466,6263,379) and Prediction interval (3957.32,8429.526).
+
+
+4. Overall, we found a pretty strong model with an Adjusted R-Squared of 0.9206! It includes the carat, cut, color, clarity, depth and table of a diamond, and can fairly predict the price of a diamond given those variables! While the customized and checked model that we made in part 2, which includes the transformed price and carat variables, had a better R-Squared, it was still incredibly interesting to see that the backward step elimination had a fairly similar variable makeup. The only difference between the two is that there was no log transformation, and we also omit x from the backward step elimination model because of multicollinearity. Using the backward step elimination model, we were able to get a pretty accurate prediction for a diamond with a carat of 1, an ideal cut, the color "G", a clarity of VS2, a depth of 61.5 and a table of 57 to have a price of around 6193.422. 
+
+
+
+
+
+
