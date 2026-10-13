@@ -1,0 +1,407 @@
+---
+title: "FinalProject"
+author: "Conrad Fritz"
+date: "2026-06-03"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, tidy = TRUE,
+  tidy.opts = list(width.cutoff = 60))
+library(dplyr)
+
+```
+
+
+# An Analysis between Suicide and the Force of Time
+Author: *Conrad Fritz*
+*PSTATW 174/274 S26 Final Project *
+
+Before we start, I would like to address that this project analyzes a time series regarding Suicide Deaths from 1979-2016. That being said, this is incredibly heavy topic, so please be warned.
+
+The data set comes from the following Kaggle data set:<https://www.kaggle.com/datasets/szamil/who-suicide-statistics>
+
+```{r, echo=FALSE}
+sstats <- read.csv("C:/Users/conra/Downloads/archive (3)/who_suicide_statistics.csv")
+```
+
+## Abstract:
+This analysis of the WHO Suicide Statistics aims to analyze the relationship between time and the rate of suicide in the United States. While there are a handful of variables that can be considered in reasons for suicide, time is one that isn't typically considered as a larger factor. This analysis aims to answer if suicide rates have gone up in time, and whether or not we can forecast the number of suicides within a year in the United States. We'll see if there's a specific trend within suicide rates, and whether or not this trend can be analyzed and predicted.Within this analysis, we use differencing, the ARIMA model, model diagnosis, and forecasting to see if we can get a model that somewhat captures the trends in suicide, whether it be with the model itself, or its confidence interval. 
+
+
+---
+
+
+## Introduction: 
+The problem we're addressing with this project is the increasing trend of suicide over time. The goal of this project is to see if the number of suicide victims every year has a trend that we can model to predict the future number of suicide victims. In doing so, I hope to not only address the growing number of suicides per year, but I hope to bring further motivation to the suicide prevention cause. 
+
+The data set we're analyzing today comes from the Kaggle data set, WHO (World Health Organization) Suicide Statistics. It contains basic aggregate numbers of suicides within 1979-2016 by country, year, age group and sex. Since the analysis of all countries within the data set would result in a 60 page long report, we will focus on the United States of America, and the difference in the number of suicides between men and women. We will be attempting to forecast the number of suicides from 2009-2016 by training our model on the data between 1979-2008.
+
+After the aggregation and splitting of our data, the differencing at lag 1 to remove trends, and a quick search for the most optimal p and q values which yield the lowest aicc, we forecasted the number of suicides from 2009-2016 and found that, despite the extraction of historical trends information, a model simply built off of gender and time cannot accurately forecast future numbers of suicides. This is most likely due to the fact that there are a handful of external variables and shocks that go into calculating the number of suicides which wasn't analyzed in this project. 
+
+
+## The Analysis
+We'll begin by dividing the data into a training and test set. We'll use the training set for modeling, and the test set for validation. We also need to make sure each set has all ages added up, and each gender added up respectively. 
+
+```{r, echo=FALSE}
+sstats_us <- sstats %>%
+ filter(country == "United States of America") %>%
+ group_by(year, sex) %>%
+ summarize(total_suicides = sum(suicides_no, na.rm = TRUE), .groups = "drop")
+
+training <- sstats_us%>%filter(year<=2008)
+test <- sstats_us%>%filter(year>2008)
+
+male.s <- training %>%filter(sex=="male")
+female.s <- training %>%filter(sex=="female")
+
+```
+After splitting it, we can plot the time series, and examine if there are any trends, seasonal components or any sharp changes in behavior. 
+
+```{r, echo=FALSE}
+male.ts <- ts(male.s$total_suicides, start=c(1979,1))
+plot(male.ts, main ="1979-2009 Suicide Rates of Men", xlab="Years", ylab="Suicide Count")
+
+female.ts <- ts(female.s$total_suicides, start=c(1979,1))
+plot(female.ts, main ="1979-2009 Suicide Rates of Women", xlab="Years", ylab="Suicide Count")
+```
+Based on the time series, we do see a positive trend in the male data, but no seasonality (mainly because there's no month-based data). As for women, a trend is a little harder to tell considering that it goes down, then up then sharply down in 2009. Based on this, we can say there was a gradual downward trend from 1980-2000, then an upward trend from 2000-2008, but no seasonality as well. 
+
+To address both time series, we can difference them at d=1 to see if we can get it to look stationary.
+```{r, echo=FALSE}
+male2.ts <- diff(male.ts, lag=1)
+female3.ts <- diff(female.ts, lag=1)
+
+plot(male2.ts, main ="1979-2009 Suicide Rates of Men (Differenced)", xlab="Years", ylab="Suicide Count")
+
+plot(female3.ts, main ="1979-2009 Suicide Rates of Women (Differenced)", xlab="Years", ylab="Suicide Count")
+```
+Now that both data sets looks like white noise, we can plot and analyze the ACF and PACF to preliminary identify my model(s).
+
+```{r, echo=FALSE}
+male.acf <- acf(male2.ts)
+female.acf <- acf(female3.ts)
+male.acf <- pacf(male2.ts)
+female.acf <- pacf(female3.ts)
+```
+Based on the ACF of the male.ts, we can see there's a strict drop off at lag 0, which means that the q here is probably 0. Based on PACF of the male.ts, we can also see that while there is a larger lag at lag 13, it's not significant enough to us, meaning that p must be about 0. 
+As for the ACF and PACF of the female.ts, we see a similar story where the ACF of the female.ts also doesn't spike anywhere but lag 0, showing that q must be 0. Using the PACF as a guide, p must also be about 0 considering that there's not spikes. 
+
+In the end, we have p=0 and q=0 for both time series. Because of this, we can fit the model to an ARIMA(0,1,0) for both, since we differenced at d=1. 
+$$
+ARIMA (0,1,0)
+$$
+Using some wacky loops to check to see if we made any mistakes in our previous step, I'm going to try some other model values out ranging from p and q values of 0 to 4. 
+
+```{r, echo=FALSE}
+minm <- 1000000
+minf <- 1000000
+valm1 <- 0
+valm2 <- 0
+valf1 <- 0
+valf2 <- 0
+for(i in 0:4){
+  for (j in 0:4){
+  fit_male.ts <- arima(male2.ts, order=c(i,0,j))
+  fit_female.ts <- arima(female3.ts, order=c(i,0,j))
+  #print("Males")
+  #fit_male.ts$aic
+  #print("Females")
+  #fit_male.ts$aic
+  if (minm > fit_male.ts$aic){
+    minm <- fit_male.ts$aic
+    valm1 <- i
+    valm2 <- j
+  }
+  if (minf > fit_female.ts$aic){
+    minf <- fit_female.ts$aic
+    valf1 <- i
+    valf2 <- j
+  }
+  }
+}
+
+print("best:")
+minm 
+minf
+valm1 
+valm2
+valf1 
+valf2 
+fit_male.ts <- arima(male.ts, order=c(valm1,1,valm2))
+fit_female.ts <- arima(female.ts, order=c(valf1,1,valf2))
+
+```
+Interestingly enough, we found that a better p value for males is 1! Using this, we can build our model and run a diagnostic check on it: 
+```{r, echo=FALSE}
+summary(fit_male.ts)
+summary(fit_female.ts)
+acf(resid(fit_male.ts), main="ACF of Residuals (Male)")
+acf(resid(fit_female.ts), main = "ACF of Residuals (Female)")
+
+Box.test(resid(fit_male.ts), lag=15, type="Ljung-Box")
+Box.test(resid(fit_female.ts), lag=15, type="Ljung-Box")
+
+qqnorm(resid(fit_male.ts))
+qqline(resid(fit_male.ts),col="red")
+qqnorm(resid(fit_female.ts))
+qqline(resid(fit_female.ts),col="blue")
+
+```
+Looking at our diagnostic checks, our ACFs for the residuals of both data sets look like nothing spikes out of place, the Box-Ljung test shows we have a high p-value of 0.6744 and 0.8252 of male and female respectively, and our normality of residuals doesn't show any notable outliers! 
+
+With this in mind, our respective models are:
+$$
+ARIMA (1,1,0)
+$$
+
+For the original female data!
+$$
+ARIMA (0,1,0)
+$$
+
+
+Based on the summaries and knowledge that this has a p and q value of 0, for the female data, we can safely assume that $\phi$ and $\theta$ are both 0. Our model equation should be: 
+$$
+Y_t -Y_{t-1}=\epsilon_t 
+$$
+or more formally: 
+$$
+Y_t=Y_{t-1}+\epsilon_t
+$$
+Which means this entire time series is more or less a stochastic process. Based on our analysis of the residuals, this does seem like a satisfactory model, despite the fact that this is a stochastic process, which doesn't help us a lot.
+
+For our male data, we know that p=1 and q=0, so we now we have the model: 
+$$
+Y_t-Y_{t-1}=\phi_1(Y_{t-1}-Y_{t-2})+\epsilon_t
+$$
+To solve for $\phi$, we can get it from seeing the coefficients of our model, which is 0.4427. This means our final equation for the male data is: 
+
+$$
+Y_t-Y_{t-1}= 0.4437(Y_{t-1}-Y_{t-2})+\epsilon_t
+$$
+Once again, based on the residual analysis we performed, we can say that this model is certainly satisfactory. 
+
+```{r, echo=FALSE}
+coef(fit_male.ts)
+```
+
+
+## Final Forecasting: 
+```{r, echo=FALSE}
+male.t <- test %>%filter(sex=="male")
+female.t <- test %>%filter(sex=="female")
+male_test.ts <-ts(male.t$total_suicides, start=2010)
+female_test.ts <-ts(female.t$total_suicides, start=2010)
+
+
+male.pred <- predict(fit_male.ts, n.ahead=10)
+female.pred <- predict(fit_female.ts, n.ahead=10)
+
+ubm <- male.pred$pred + 1.96*male.pred$se
+lbm <- male.pred$pred -1.96*male.pred$se
+ubf <- female.pred$pred + 1.96*female.pred$se
+lbf <- female.pred$pred -1.96*female.pred$se
+
+ts.plot(male.ts, male.pred$pred, ubm,lbm, 
+        col = c("black", "red", "blue", "blue"),
+        lty = c(1,1,2,2),
+        main="Forecast vs Actual (Male)", 
+        ylab="suicide count", 
+        xlab = "years",
+        xlim =c(1979,2016),
+        ylim = c(0, max(ubm, male_test.ts, na.rm=TRUE) + 500))
+lines(male_test.ts, col = "green", lwd = 2)
+
+ts.plot(female.ts, female.pred$pred, ubf,lbf, 
+        col = c("black", "red", "blue", "blue"),
+        lty = c(1,1,2,2),
+        main="Forecast vs Actual (Female) ", 
+        ylab="suicide count", 
+        xlab = "years",
+        xlim =c(1979,2016),
+        ylim = c(0, max(ubf, female_test.ts, na.rm=TRUE) + 500))
+lines(female_test.ts, col = "green", lwd = 2)
+```
+From the looks of these models, the predicted number of suicides seems to be significantly underestimated, despite the fact the confidence interval captures the true values (the green line). From these graphs, we can tell that my models aren't exactly great at predicting the climbing number of suicides, and instead assumes that it stays about the same value from 2009-2016. 
+
+## Conclusion: 
+In the end, in our attempt to predict the number of suicides in a given bracket of years, we have found that the simple use of time and gender doesn't provide us with a strong enough model to predict the unfortunate trend. The model we ended up with was:
+$$
+Y_t-Y_{t-1}= 0.4437(Y_{t-1}-Y_{t-2})+\epsilon_t
+$$
+for the male data set, and a random walk: 
+$$
+Y_t=Y_{t-1}+\epsilon_t
+$$
+For the female data set. 
+
+With these incredibly simple ARIMA models, we're not able to accurately predict the number of suicides given a bracket of years. However, I anticipate that with even more data (including variables tied to depression, loneliness, etc.), we can get a significantly more complicated model which may accurately predict the number of suicides in a year. Overall, while we may have failed in our forecasting, we were still able to bring a light to this incredibly sensitive and important topic. 
+
+
+## References: 
+Kaggle Data Set:
+<https://www.kaggle.com/datasets/szamil/who-suicide-statistics>
+
+
+## Appendix: 
+```{r, eval=FALSE}
+# Load the Data
+sstats <- read.csv("C:/Users/conra/Downloads/archive (3)/who_suicide_statistics.csv")
+
+# Aggregate the data (used PSTAT 10 Notes)
+sstats_us <- sstats %>%
+ filter(country == "United States of America") %>%
+ group_by(year, sex) %>%
+ summarize(total_suicides = sum(suicides_no, na.rm = TRUE), .groups = "drop")
+
+# Split the data into two (1979-2008 and 2009-2016)
+training <- sstats_us%>%filter(year<=2008)
+test <- sstats_us%>%filter(year>2008)
+
+# Split data into male and female
+male.s <- training %>%filter(sex=="male")
+female.s <- training %>%filter(sex=="female")
+
+# Creation of the main male and female time series, and their respective plots 
+male.ts <- ts(male.s$total_suicides, start=c(1979,1))
+plot(male.ts, main ="1979-2009 Suicide Rates of Men", xlab="Years", ylab="Suicide Count")
+
+female.ts <- ts(female.s$total_suicides, start=c(1979,1))
+plot(female.ts, main ="1979-2009 Suicide Rates of Women", xlab="Years", ylab="Suicide Count")
+
+# The differencing of the male and female time series
+male2.ts <- diff(male.ts, lag=1)
+female3.ts <- diff(female.ts, lag=1)
+
+# Plotting the differenced time series
+plot(male2.ts, main ="1979-2009 Suicide Rates of Men (Differenced)", xlab="Years", ylab="Suicide Count")
+
+plot(female3.ts, main ="1979-2009 Suicide Rates of Women (Differenced)", xlab="Years", ylab="Suicide Count")
+
+# ACF and PACF of each time series: 
+male.acf <- acf(male2.ts)
+female.acf <- acf(female3.ts)
+male.acf <- pacf(male2.ts)
+female.acf <- pacf(female3.ts)
+
+# A minimum value finder algorithm
+minm <- 1000000
+minf <- 1000000
+#variables to hold which i and j allow for the smallest aicc
+valm1 <- 0
+valm2 <- 0
+valf1 <- 0
+valf2 <- 0
+
+# for loop to go through every i and j, to find smallest aicc
+for(i in 0:4){
+  for (j in 0:4){
+    # test the i and j  values on both models
+  fit_male.ts <- arima(male2.ts, order=c(i,0,j))
+  fit_female.ts <- arima(female3.ts, order=c(i,0,j))
+  #print("Males")
+  #fit_male.ts$aic
+  #print("Females")
+  #fit_male.ts$aic
+  # store each variable
+  if (minm > fit_male.ts$aic){
+    minm <- fit_male.ts$aic
+    valm1 <- i
+    valm2 <- j
+  }
+  if (minf > fit_female.ts$aic){
+    minf <- fit_female.ts$aic
+    valf1 <- i
+    valf2 <- j
+  }
+  }
+}
+#printing each
+print("best:")
+minm 
+minf
+valm1 
+valm2
+valf1 
+valf2 
+# restating the male and female models that have the smallest aic as arima (1,1,0) and (0,1,0) for male and female respectively
+fit_male.ts <- arima(male.ts, order=c(valm1,1,valm2))
+fit_female.ts <- arima(female.ts, order=c(valf1,1,valf2))
+
+# looking at the coefficients
+summary(fit_male.ts)
+summary(fit_female.ts)
+#getting the residual's acfs and looking for spikes 
+acf(resid(fit_male.ts), main="ACF of Residuals (Male)")
+acf(resid(fit_female.ts), main = "ACF of Residuals (Female)")
+
+# box test, looking for notable p-values
+Box.test(resid(fit_male.ts), lag=15, type="Ljung-Box")
+Box.test(resid(fit_female.ts), lag=15, type="Ljung-Box")
+
+# normality test, seeing if the line matches up with the data points
+qqnorm(resid(fit_male.ts))
+qqline(resid(fit_male.ts),col="red")
+qqnorm(resid(fit_female.ts))
+qqline(resid(fit_female.ts),col="blue")
+
+# Getting the coefficient from our model
+coef(fit_male.ts)
+
+# filtering and setting our test data 
+male.t <- test %>%filter(sex=="male")
+female.t <- test %>%filter(sex=="female")
+# getting the representation of our test data
+male_test.ts <-ts(male.t$total_suicides, start=2010)
+female_test.ts <-ts(female.t$total_suicides, start=2010)
+
+# forecasting 10 periods ahead
+male.pred <- predict(fit_male.ts, n.ahead=10)
+female.pred <- predict(fit_female.ts, n.ahead=10)
+
+# upper and lower bound of confidence interval of  male and female
+ubm <- male.pred$pred + 1.96*male.pred$se
+lbm <- male.pred$pred -1.96*male.pred$se
+ubf <- female.pred$pred + 1.96*female.pred$se
+lbf <- female.pred$pred -1.96*female.pred$se
+
+# plotting the male against the predicted with confidence interval
+ts.plot(male.ts, male.pred$pred, ubm,lbm, 
+        col = c("black", "red", "blue", "blue"),
+        lty = c(1,1,2,2),
+        main="Forecast vs Actual", 
+        ylab="suicide count", 
+        xlab = "years",
+        xlim =c(1979,2016),
+        ylim = c(0, max(ubm, male_test.ts, na.rm=TRUE) + 500))
+# test data plotted
+lines(male_test.ts, col = "green", lwd = 2)
+
+# plotting the female against the predicted with confidence interval
+ts.plot(female.ts, female.pred$pred, ubf,lbf, 
+        col = c("black", "red", "blue", "blue"),
+        lty = c(1,1,2,2),
+        main="Forecast vs Actual", 
+        ylab="suicide count", 
+        xlab = "years",
+        xlim =c(1979,2016),
+        ylim = c(0, max(ubf, female_test.ts, na.rm=TRUE) + 500))
+# test data plotted
+lines(female_test.ts, col = "green", lwd = 2)
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
